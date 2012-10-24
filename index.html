@@ -8,7 +8,9 @@
         <script src="js/jquery.js"></script>
         <script src="js/OpenLayers-2.12/OpenLayers.js"></script>
 		 <script src="js/myopenayer.js"></script>
+		 <script src="js/tianditu.js"></script>
 		 <script src="data/MonitorHour.js"></script>
+		 <script src='http://maps.google.com/maps?file=api&amp;v=2&amp;key=ABQIAAAAjpkAC9ePGem0lIq5XcMiuhR_wWLPFku8Ix9i2SXYRVK3e45q1BQUd_beF8dtzKET_EteAjPdGDwqpQ'></script>
 		  <script src="js/OpenLayers-2.12/LoadingPanel.js"></script>
 		<!--面雨量模拟数据-->
 		<script src="data/rl.js"></script>
@@ -35,30 +37,38 @@
 				var host=remotehost;
 				var resultLayer;
 				var bufferLayer;
-				
-				var rule = new OpenLayers.Rule({
-					// We could also set a filter here.  E.g.
-					// filter: format.read("STATE_ABBR >= 'B' AND STATE_ABBR <= 'O'"),
-					symbolizer: {
-						fillColor: "#ff0000",
-						pointRadius:3,
-						strokeColor: "#ffcccc",
-						fillOpacity: "0.5"
-					}    
-				});
+				var map;
 
 				function init(){
-					var map=new OpenLayers.Map("mapDiv");
+					map=new OpenLayers.Map("mapDiv");
+					var maxBound=new OpenLayers.Bounds(113.51927,23.20156,114.63713,22.38445);
+					
+					//底图
 					var blayer= new OpenLayers.Layer.WMS(
 						"Natural Earth", 
 						host+"/wms?service=WMS",
 						 {layers: "railway1"}
 					);
+					//google
+					 var gmap = new OpenLayers.Layer.Google(
+						"Google Streets", // the default
+						 {type: G_HYBRID_MAP, numZoomLevels: 20}
+					);
+					//天地图
+					var tianditu=new OpenLayers.Layer.TiandituLayer(
+						"tianditu",
+						{
+							topLevel:8,
+							bottomLevel:18
+						}
+					);
+					//雷达线
 					var blayer2= new OpenLayers.Layer.WMS(
 						"Natural Earth", 
 						localhost+"/wms?service=WMS",
 						 {layers: "cite:leida", format:'image/gif',transparent: "true"}
 					);
+					//雷达点
 					var leidap=new OpenLayers.Layer.Vector("wfs",
 						{
 							strategies:[new OpenLayers.Strategy.BBOX()],
@@ -109,19 +119,33 @@
 							}
 						}
 					);
-					
+					//查询结果图层
 					resultLayer=new OpenLayers.Layer.Vector("wfs",{
-								styleMap: new OpenLayers.StyleMap({
-							"default": new OpenLayers.Style(null, {rules: [rule]})
-						})
+									styleMap: new OpenLayers.StyleMap({
+										"default":new OpenLayers.Style({
+													fillColor: "#ff0000",
+													pointRadius:3,
+													strokeColor: "#ffcccc",
+													fillOpacity: "0.5"
+												}),	
+										"select": new OpenLayers.Style({
+													fillColor: "#66ccff",
+													strokeColor: "#3399ff",
+													graphicZIndex: 2
+												})
+								})
 					});
+					//缓冲区图层
 					bufferLayer=new OpenLayers.Layer.Vector("buffer");
-					map.addLayers([blayer2,blayer,bufferLayer,resultLayer,leidap]);
-					map.setCenter(new OpenLayers.LonLat(114.10, 20.01));
-					map.zoomTo(6);
+					map.addLayers([blayer2,tianditu,bufferLayer,resultLayer,leidap]);
+					
 					map.addControl(featureSle);
 					featureSle.activate();
-					
+					var mousep=new OpenLayers.Control.MousePosition();
+					map.addControl(mousep);
+					mousep.activate();
+					map.setCenter(new OpenLayers.LonLat(114.04, 22.85466),10);
+					map.zoomToExtent(maxBound);
 				}
 				
 			function clearF(){
@@ -148,29 +172,6 @@
 						}
 					}
 				);
-			}
-			
-			
-			function getGeoMr(buf){
-				$.ajax(
-					{
-						url:"http://localhost:8080/gg/getm",
-						dataType:"text",
-						data:{buffer:buf},
-						type:"post",
-						success:function(data){
-							var gjp=new OpenLayers.Format.GeoJSON();
-							resultLayer.addFeatures(gjp.read(data));
-						}
-					}
-				);
-			}
-			
-			/*
-			*判断点在面内
-			*/
-			function contain(polygon,point){
-				var lines=polygon.components(OpenLayers.Geometry.Point());
 			}
 		
 		</script>
