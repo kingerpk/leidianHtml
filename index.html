@@ -1,0 +1,210 @@
+﻿
+<html>
+    <head>
+		 <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0">
+        <title>雷电信息系统</title>
+		
+        <script src="js/jquery.js"></script>
+        <script src="js/OpenLayers-2.12/OpenLayers.js"></script>
+		 <script src="js/myopenayer.js"></script>
+		 <script src="data/MonitorHour.js"></script>
+		  <script src="js/OpenLayers-2.12/LoadingPanel.js"></script>
+		<!--面雨量模拟数据-->
+		<script src="data/rl.js"></script>
+		
+		<link rel="stylesheet" href="css/style.css">
+		<link rel="stylesheet" href="http://openlayers.org/dev/theme/default/style.css">
+	<style type="text/css" >
+			    .olControlLoadingPanel {
+            background-image:url(images/ajax-loader.gif);
+            margin-left: 40%;
+            margin-top: 30%;
+            position: relative;
+            width: 195px;
+            height: 195px;
+            background-position:center;
+            background-repeat:no-repeat;
+            display: none;
+        }
+	</style>
+	<script type="text/javascript">
+
+				var localhost="http://localhost:8080/geoserver";
+				var remotehost="http://58.215.188.217:8080/geoserver";
+				var host=remotehost;
+				var resultLayer;
+				var bufferLayer;
+				
+				var rule = new OpenLayers.Rule({
+					// We could also set a filter here.  E.g.
+					// filter: format.read("STATE_ABBR >= 'B' AND STATE_ABBR <= 'O'"),
+					symbolizer: {
+						fillColor: "#ff0000",
+						pointRadius:3,
+						strokeColor: "#ffcccc",
+						fillOpacity: "0.5"
+					}    
+				});
+
+				function init(){
+					var map=new OpenLayers.Map("mapDiv");
+					var blayer= new OpenLayers.Layer.WMS(
+						"Natural Earth", 
+						host+"/wms?service=WMS",
+						 {layers: "railway1"}
+					);
+					var blayer2= new OpenLayers.Layer.WMS(
+						"Natural Earth", 
+						localhost+"/wms?service=WMS",
+						 {layers: "cite:leida", format:'image/gif',transparent: "true"}
+					);
+					var leidap=new OpenLayers.Layer.Vector("wfs",
+						{
+							strategies:[new OpenLayers.Strategy.BBOX()],
+							protocol:new OpenLayers.Protocol.WFS({
+								url:localhost+"/wfs",
+								featureType: "leida_point",
+								featureNS: "http://www.opengeospatial.net/cite"
+							}),
+							styleMap: new OpenLayers.StyleMap({
+										"default":new OpenLayers.Style({
+													pointRadius:3,
+													fillColor: "#0076A1",
+													strokeColor: "white",
+													strokeWidth: 1
+												}),	
+										"select": new OpenLayers.Style({
+													fillColor: "#66ccff",
+													strokeColor: "#3399ff",
+													graphicZIndex: 2
+												})
+								})
+						}
+					);
+					
+					var featureSle=new OpenLayers.Control.SelectFeature(
+						leidap,
+						{
+							onSelect:function(feature){
+								var format = new OpenLayers.Format.CQL();
+								clearF();
+								var bufferv=prompt( "输入查询半径（单位：千米）："); 
+								var area=new OpenLayers.Geometry.Polygon.createRegularPolygon(feature.geometry,(1/111.11)*bufferv,40,0);
+								$.ajax(
+									{
+										url:"http://localhost:8080/gg/getm",
+										data:{buffer:bufferv,x:feature.geometry.x,y:feature.geometry.y},
+										dataType:"text",
+										type:"post",
+										success:function(data){
+											var gjp=new OpenLayers.Format.GeoJSON();
+											resultLayer.addFeatures(gjp.read(data));
+										}
+									}
+								);
+ 								var yuan= new OpenLayers.Feature.Vector(area);
+								bufferLayer.addFeatures([yuan]);
+
+							}
+						}
+					);
+					
+					resultLayer=new OpenLayers.Layer.Vector("wfs",{
+								styleMap: new OpenLayers.StyleMap({
+							"default": new OpenLayers.Style(null, {rules: [rule]})
+						})
+					});
+					bufferLayer=new OpenLayers.Layer.Vector("buffer");
+					map.addLayers([blayer2,blayer,bufferLayer,resultLayer,leidap]);
+					map.setCenter(new OpenLayers.LonLat(114.10, 20.01));
+					map.zoomTo(6);
+					map.addControl(featureSle);
+					featureSle.activate();
+					
+				}
+				
+			function clearF(){
+				resultLayer.removeAllFeatures();
+				bufferLayer.removeAllFeatures();
+			}
+				
+			function getGeoJson(){
+				clearF();
+			  var bufferv=prompt( "输入查询半径（单位：千米）："); 
+
+				$.ajax(
+					{
+						url:"http://localhost:8080/gg/query",
+						data:{buffer:bufferv},
+						dataType:"text",
+						type:"post",
+						success:function(data){
+							var datas=data.split("@everylightszfilter@");
+							
+							var gjp=new OpenLayers.Format.GeoJSON();
+							resultLayer.addFeatures(gjp.read(datas[1]));
+							bufferLayer.addFeatures(gjp.read(datas[0]));
+						}
+					}
+				);
+			}
+			
+			
+			function getGeoMr(buf){
+				$.ajax(
+					{
+						url:"http://localhost:8080/gg/getm",
+						dataType:"text",
+						data:{buffer:buf},
+						type:"post",
+						success:function(data){
+							var gjp=new OpenLayers.Format.GeoJSON();
+							resultLayer.addFeatures(gjp.read(data));
+						}
+					}
+				);
+			}
+			
+			/*
+			*判断点在面内
+			*/
+			function contain(polygon,point){
+				var lines=polygon.components(OpenLayers.Geometry.Point());
+			}
+		
+		</script>
+    </head>
+    <body onload=init()>
+		<div class="shell">
+			<div class="header"></div>
+			<div class="clear"></div>
+			<div class="nav">
+				<div class="date">2012年8月13日 星期一 15:42</div>
+				<div class="menu">
+					<ul>
+						<li><a onclick=getGeoJson() href="javascript:void(0)">沿线缓冲查询</a></li>
+					</ul>
+				</div>
+				<div class="user"> 您好! 张三 | <a href="#">退出</a> </div>
+			</div>
+			<div class="clear"></div>
+			<div class="main">
+				<div class="left">
+					<div class="submenu">
+						
+					</div>
+				</div>
+				
+				<div class="content">
+					<div id="mapDiv"></div>
+				</div>
+				<div class="clear"></div>
+			</div>
+			<div class="clear"></div>
+			<div class="footer">
+			</div>
+			<div class="clear"></div>
+		</div>	
+	</body>
+</html>
