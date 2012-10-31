@@ -21,7 +21,7 @@
 				background: url(../images/header.png) no-repeat;
 				height: 89px;
 			}
-			.date,.menu,.user{float:left}
+			.date,.menu,.user{float:left;height:31px;}
 			.nav{height:31px;line-height:31px;}
 			.date{width:200px;background:url(../images/date_bg.png) repeat-x;text-align:center;color:#fff;}
 			.menu ul {

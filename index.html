@@ -6,12 +6,14 @@
         <title>雷电信息系统</title>
 		
         <script src="js/jquery.js"></script>
-        <script src="js/OpenLayers-2.12/OpenLayers.js"></script>
+        <script src="js/OpenLayers-2.12/lib/OpenLayers.js"></script>
 		 <script src="js/myopenayer.js"></script>
 		 <script src="js/tianditu.js"></script>
 		 <script src="data/MonitorHour.js"></script>
-		 <script src='http://maps.google.com/maps?file=api&amp;v=2&amp;key=ABQIAAAAjpkAC9ePGem0lIq5XcMiuhR_wWLPFku8Ix9i2SXYRVK3e45q1BQUd_beF8dtzKET_EteAjPdGDwqpQ'></script>
 		  <script src="js/OpenLayers-2.12/LoadingPanel.js"></script>
+		  <script src="js/proj4js-combined.js"></script>
+		  
+		   <script src='http://maps.google.com/maps?file=api&amp;v=2&amp;key=AIzaSyDtXcsbhRKycIjTKcIIiyhkwURVTWsVRdo'></script>
 		<!--面雨量模拟数据-->
 		<script src="data/rl.js"></script>
 		
@@ -32,50 +34,57 @@
 	</style>
 	<script type="text/javascript">
 
-				var localhost="http://localhost:8080/geoserver";
-				var remotehost="http://58.215.188.217:8080/geoserver";
-				var host=remotehost;
+				var localhost="http://localhost:8080/";
+				var remotehost="http://58.215.188.217:8080/";
+				var proj = new OpenLayers.Projection("EPSG:4326");
+				var host=localhost;
 				var resultLayer;
 				var bufferLayer;
+				var tianditu;
+				var gmap;
 				var map;
 
-				function init(){
-					map=new OpenLayers.Map("mapDiv");
-					var maxBound=new OpenLayers.Bounds(113.51927,23.20156,114.63713,22.38445);
+				function init(basemap,mapType){
+					$("#mapDiv").empty();
 					
 					//底图
 					var blayer= new OpenLayers.Layer.WMS(
 						"Natural Earth", 
-						host+"/wms?service=WMS",
+						host+"geoserver/wms?service=WMS",
 						 {layers: "railway1"}
 					);
-					//google
-					 var gmap = new OpenLayers.Layer.Google(
-						"Google Streets", // the default
-						 {type: G_HYBRID_MAP, numZoomLevels: 20}
-					);
-					//天地图
-					var tianditu=new OpenLayers.Layer.TiandituLayer(
+					
+					tianditu=new OpenLayers.Layer.TiandituLayer(
 						"tianditu",
 						{
-							topLevel:8,
-							bottomLevel:18
+							mapType:mapType
 						}
 					);
+					
 					//雷达线
-					var blayer2= new OpenLayers.Layer.WMS(
+					var leidaLine= new OpenLayers.Layer.WMS(
 						"Natural Earth", 
-						localhost+"/wms?service=WMS",
-						 {layers: "cite:leida", format:'image/gif',transparent: "true"}
+						host+"geoserver/wms?service=WMS",
+						 {layers: "cite:leida_wm", format:'image/gif',transparent: "true", projection: new OpenLayers.Projection("EPSG:900913"),}
 					);
 					//雷达点
-					var leidap=new OpenLayers.Layer.Vector("wfs",
+					var leidap=new OpenLayers.Layer.Vector("leidap",
 						{
 							strategies:[new OpenLayers.Strategy.BBOX()],
 							protocol:new OpenLayers.Protocol.WFS({
-								url:localhost+"/wfs",
+								url:host+"geoserver/wfs",
 								featureType: "leida_point",
-								featureNS: "http://www.opengeospatial.net/cite"
+								featureNS: "http://www.opengeospatial.net/cite",
+								readFormat:{
+									read:function(d){
+										var formater=new OpenLayers.Format.GML();
+										var features=formater.read(d);
+										for(var i in features){
+											features[i].geometry.transform(proj,map.getProjectionObject());
+										}
+										return features;
+									}
+								}
 							}),
 							styleMap: new OpenLayers.StyleMap({
 										"default":new OpenLayers.Style({
@@ -99,23 +108,34 @@
 							onSelect:function(feature){
 								var format = new OpenLayers.Format.CQL();
 								clearF();
+								var areaArg=1000;
+								var centerPoint;
+								if(map.getProjection()=="EPSG:4326"){
+									areaArg=1/111.11;
+									centerPoint=feature.geometry;
+								}
+								else if(map.getProjection()=="EPSG:900913"){
+									
+									areaArg=1000;
+									centerPoint=feature.geometry.clone().transform(map.getProjectionObject(),proj);
+								}
 								var bufferv=prompt( "输入查询半径（单位：千米）："); 
-								var area=new OpenLayers.Geometry.Polygon.createRegularPolygon(feature.geometry,(1/111.11)*bufferv,40,0);
+								var area=new OpenLayers.Geometry.Polygon.createRegularPolygon(feature.geometry,areaArg*bufferv,40,0);
 								$.ajax(
 									{
-										url:"http://localhost:8080/gg/getm",
-										data:{buffer:bufferv,x:feature.geometry.x,y:feature.geometry.y},
+										url:host+"/gg1/getm",
+										data:{buffer:bufferv,x:centerPoint.x,y:centerPoint.y,datacrs:"EPSG:4326",targetcrs:map.getProjection()},
 										dataType:"text",
 										type:"post",
 										success:function(data){
 											var gjp=new OpenLayers.Format.GeoJSON();
-											resultLayer.addFeatures(gjp.read(data));
+											var resultFeatures=gjp.read(data);
+											resultLayer.addFeatures(resultFeatures);
 										}
 									}
 								);
  								var yuan= new OpenLayers.Feature.Vector(area);
 								bufferLayer.addFeatures([yuan]);
-
 							}
 						}
 					);
@@ -124,7 +144,7 @@
 									styleMap: new OpenLayers.StyleMap({
 										"default":new OpenLayers.Style({
 													fillColor: "#ff0000",
-													pointRadius:3,
+													label:"+",
 													strokeColor: "#ffcccc",
 													fillOpacity: "0.5"
 												}),	
@@ -137,21 +157,79 @@
 					});
 					//缓冲区图层
 					bufferLayer=new OpenLayers.Layer.Vector("buffer");
-					map.addLayers([blayer2,tianditu,bufferLayer,resultLayer,leidap]);
+					if(basemap=="tianditu"){
+						map=new OpenLayers.Map("mapDiv");
+						map.addLayers([leidaLine,tianditu,bufferLayer,resultLayer,leidap]);
+						map.setCenter(new OpenLayers.LonLat(114.04, 22.85466),10);
+						var maxBound=new OpenLayers.Bounds(113.51927,23.20156,114.63713,22.38445);
+						map.zoomToExtent(maxBound);
+					}
+					else if(basemap=="gmap"){
+						map=new OpenLayers.Map("mapDiv",{projection:new OpenLayers.Projection("EPSG:900913")}
+						);
+						map.addControl(new OpenLayers.Control.LayerSwitcher());
+						gmap = new OpenLayers.Layer.Google("Google Streets", {
+							sphericalMercator: true,
+							numZoomLevels: 20,
+							type: mapType,//G_SATELLITE_MAP,
+							'maxExtent': new OpenLayers.Bounds(-20037508.34, -20037508.34, 20037508.34, 20037508.34)
+						});
+						leidaLine = new OpenLayers.Layer.TMS("SLP", host+"geoserver/wms?service=WMS",
+										{
+										 layers: "cite:leida",
+										 format:'image/gif',
+										 transparent: "true",
+										 visibility: true,
+										 getURL: get_wms_url1,
+										 opacity: 1,
+										 isBaseLayer: false
+										});
+						map.addLayers([gmap,leidaLine,bufferLayer,resultLayer,leidap]);
+						var lonlat = new OpenLayers.LonLat(114.055,22.541);
+						lonlat.transform(proj, map.getProjectionObject());
+						map.setCenter(lonlat, 10);
+					}
 					
 					map.addControl(featureSle);
 					featureSle.activate();
 					var mousep=new OpenLayers.Control.MousePosition();
+					//mousep.displayProjection=new OpenLayers.Projection("EPSG:4326");
 					map.addControl(mousep);
 					mousep.activate();
-					map.setCenter(new OpenLayers.LonLat(114.04, 22.85466),10);
-					map.zoomToExtent(maxBound);
+					
 				}
 				
 			function clearF(){
 				resultLayer.removeAllFeatures();
 				bufferLayer.removeAllFeatures();
 			}
+			
+			function get_wms_url1(bounds) {
+
+				// recalculate bounds from Google to WGS
+				   var proj = new OpenLayers.Projection("EPSG:4326");
+					bounds.transform(map.getProjectionObject(), proj);
+
+				// this is not necessary for most servers display overlay correctly,
+				//but in my case the WMS  has been slightly shifted, so I had to correct this with this delta shift
+
+
+					//construct WMS request
+
+				  var url = this.url;
+					url += "&REQUEST=GetMap";
+					url += "&SERVICE=WMS";
+					url += "&VERSION=1.1.1";
+					url += "&LAYERS=" + this.layers;
+					url += "&FORMAT=" + this.format;
+					url += "&TRANSPARENT=TRUE";
+					url += "&SRS=" + "EPSG:4326";
+					url += "&BBOX=" + bounds.toBBOX();
+					url += "&WIDTH=" + this.tileSize.w;
+					url += "&HEIGHT=" + this.tileSize.h;
+					return url;
+
+				}
 				
 			function getGeoJson(){
 				clearF();
@@ -159,8 +237,8 @@
 
 				$.ajax(
 					{
-						url:"http://localhost:8080/gg/query",
-						data:{buffer:bufferv},
+						url:host+"/gg1/query",
+						data:{buffer:bufferv,datacrs:"EPSG:4326",targetcrs:map.getProjection()},
 						dataType:"text",
 						type:"post",
 						success:function(data){
@@ -176,7 +254,7 @@
 		
 		</script>
     </head>
-    <body onload=init()>
+    <body onload=init("gmap",G_SATELLITE_MAP)>
 		<div class="shell">
 			<div class="header"></div>
 			<div class="clear"></div>
@@ -185,6 +263,10 @@
 				<div class="menu">
 					<ul>
 						<li><a onclick=getGeoJson() href="javascript:void(0)">沿线缓冲查询</a></li>
+						<li><a onclick=init("gmap",G_SATELLITE_MAP) href="javascript:void(0)" >google影像图</a></li>
+						<li><a onclick=init("gmap",G_PHYSICAL_MAP) href="javascript:void(0)" >google地形图</a></li>
+						<li><a onclick=init("tianditu",tianditu.td_mapType.img) href="javascript:void(0)" >天地图影像图</a></li>
+						<li><a onclick=init("tianditu",tianditu.td_mapType.dem) href="javascript:void(0)" >天地图地形图</a></li>
 					</ul>
 				</div>
 				<div class="user"> 您好! 张三 | <a href="#">退出</a> </div>
